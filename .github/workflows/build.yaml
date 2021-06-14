@@ -1,0 +1,30 @@
+name: Build
+on: push
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        name: Check out Dockerfile
+
+      - name: Fetch latest Laravel version
+        run: |
+          curl -sL https://api.github.com/repos/laravel/laravel/releases/latest | \
+          jq -r ".tag_name" > .version
+          echo "LARAVEL_VERSION=$(cat .version)" >> $GITHUB_ENV
+
+      - name: Fetch latest container version
+        run: |
+          echo "DOCKER_MANIFEST=$((docker manifest inspect laravelfans/laravel:8.47.0 > /dev/null && echo 'exists') || echo 'notexists')" >> $GITHUB_ENV
+
+      - name: Build and push to local registry
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: true
+          tags: localhost:5000/golthem/laravel-roadrunner:latest
+        
+      - name: Inspect
+        run: |
+          docker buildx imagetools inspect localhost:5000/name/app:latest
