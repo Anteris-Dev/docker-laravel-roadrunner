@@ -1,41 +1,61 @@
-FROM php:8.0.6-cli-alpine3.13
-
 ARG LARAVEL_VERSION="8.*"
 
-# We will delete this later, but need composer to setup the project.
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+# Here we are going to install Laravel extension requirements that did not come
+# with the default PHP image. This will be necessary for Laravel and RoadRunner.
+FROM php:8.0-cli-alpine3.13 as php-base
+    WORKDIR /srv/laravel
 
-# Copy the RoadRunner executable to our image.
-COPY --from=spiralscout/roadrunner:2.2.1 /usr/bin/rr /usr/bin/rr
+    RUN apk add --no-cache libzip-dev && \
+        docker-php-ext-install bcmath ctype pdo_mysql pcntl sockets && \
+        rm -rf /var/www && \
+        chown -R www-data:www-data /srv/laravel
 
-# Install Laravel extension requirements that did not come with the default image.
-RUN apk add --no-cache libzip-dev
-RUN docker-php-ext-install bcmath ctype pdo_mysql pcntl sockets
+# This stage is so that we can build up everything that doesn't require Laravel
+# so as to not bust the caching for those items.
+FROM php-base as octane-base
+    COPY --from=spiralscout/roadrunner:2.2.1 /usr/bin/rr /usr/bin/rr
 
-# Install Laravel and RoadRunner
-WORKDIR /srv/laravel
+    # This really shouldn't be modified, so we aren't advertising the env variable.
+    # It allows us to globally install chokidar without modifying the Laravel package.json.
+    ENV NODE_PATH "/home/www-data/.npm-global/lib/node_modules"
 
-RUN cd /srv && composer create-project laravel/laravel="${LARAVEL_VERSION}" laravel
-RUN cd /srv/laravel && \
-    composer require laravel/octane spiral/roadrunner && \
-    php artisan octane:install --server="roadrunner"
+    RUN apk add --no-cache nodejs npm && \
+        mkdir "/home/www-data/.npm-global/" && \
+        npm config set prefix "/home/www-data/.npm-global/" && \
+        npm install -g chokidar
 
-RUN chown -R www-data:www-data /srv/laravel
+# Here we have a build container so that it is not necessary to pull composer into
+# the final container. We are going to create a new Laravel project and install Octane.
+FROM php-base as laravel
+    COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Remove the default directory and set our working directory.
-RUN rm -rf /var/www
+    RUN cd /srv && \
+        composer create-project laravel/laravel="${LARAVEL_VERSION}" laravel && \
+        cd /srv/laravel && \
+        composer require laravel/octane spiral/roadrunner && \
+        php artisan octane:install --server="roadrunner" && \
+        rm "/srv/laravel/.env"
 
-# WORKDIR /srv/laravel
+# This is our final container. We will install the RoadRunner binary and copy over
+# our built version of Laravel.
+FROM octane-base
+    USER www-data
 
-USER www-data
+    COPY --from=laravel --chown=www-data:www-data /srv/laravel/ /srv/laravel/
 
-# Run RoadRunner
-CMD [ "php", "/srv/laravel/artisan", "octane:start", "--host=0.0.0.0" ]
+    # Allow the user to specify multiple workers through an environment variable.
+    ENV ROADRUNNER_WATCH $false
+    ENV ROADRUNNER_WORKERS "auto"
 
-# Expose the ports that RoadRunner usually uses.
-EXPOSE 8000
-EXPOSE 6001
-EXPOSE 2114
+    # Expose the ports that Octane is using.
+    EXPOSE 8000
 
-# Check the health status using the status page RoadRunner gives us.
-HEALTHCHECK CMD curl --fail http://localhost:2114/health?plugin=http || exit 1
+    # Run RoadRunner
+    CMD if [[ -z $ROADRUNNER_WATCH ]] ; then \
+        php artisan octane:start --server="roadrunner" --host="0.0.0.0" --workers=${ROADRUNNER_WORKERS} ; \
+    else \
+        php artisan octane:start --server="roadrunner" --host="0.0.0.0" --workers=${ROADRUNNER_WORKERS} --watch ; \
+    fi
+
+    # Check the health status using the Octane status command.
+    HEALTHCHECK CMD php artisan octane:status --server="roadrunner"
