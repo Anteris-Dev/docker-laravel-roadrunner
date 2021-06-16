@@ -2,7 +2,7 @@ name: Build
 on: push
 
 jobs:
-  get-version:
+  Build Container:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
