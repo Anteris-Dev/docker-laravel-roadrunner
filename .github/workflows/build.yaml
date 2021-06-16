@@ -44,7 +44,7 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      - name: Build and push to local registry
+      - name: Build and push to Docker registry
         id: docker_build
         uses: docker/build-push-action@v2
         if: ${{ env.DOCKER_MANIFEST == 'notexists' || github.event_name == 'push' }}
