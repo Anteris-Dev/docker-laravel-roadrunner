@@ -15,19 +15,15 @@ jobs:
           echo "LARAVEL_MAJOR_VERSION=$(cat .version | awk '{print substr($0, 2, 1)}')" >> $GITHUB_ENV
 
       - name: Fetch the version of the last container built
-        run: |
-          echo "DOCKER_MANIFEST=$((docker manifest inspect anterisdev/laravel-roadrunner:${{ env.LARAVEL_VERSION }} && echo 'exists') || echo 'notexists')" >> $GITHUB_ENV
-          
-      - name: Print the latest version
-        run: echo "Docker container ${{ env.DOCKER_MANIFEST }}"
+        run: echo "DOCKER_MANIFEST=$((docker manifest inspect anterisdev/laravel-roadrunner:${{ env.LARAVEL_VERSION }} > /dev/null && echo 'exists') || echo 'notexists')" >> $GITHUB_ENV
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
-        if: env.DOCKER_MANIFEST == 'notexists'
+        if: env.DOCKER_MANIFEST == ''
 
       - name: Cache Docker layers
         uses: actions/cache@v2
-        if: env.DOCKER_MANIFEST == 'notexists'
+        if: env.DOCKER_MANIFEST == ''
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ github.sha }}
@@ -35,7 +31,7 @@ jobs:
 
       - name: Login to DockerHub
         uses: docker/login-action@v1
-        if: env.DOCKER_MANIFEST == 'notexists'
+        if: env.DOCKER_MANIFEST == ''
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
@@ -43,7 +39,7 @@ jobs:
       - name: Build and push to local registry
         id: docker_build
         uses: docker/build-push-action@v2
-        if: env.DOCKER_MANIFEST == 'notexists'
+        if: env.DOCKER_MANIFEST == ''
         with:
           context: .
           build-args: "LARAVEL_VERSION=${{ env.LARAVEL_VERSION }}"
