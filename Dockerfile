@@ -1,5 +1,3 @@
-ARG LARAVEL_VERSION="8.*"
-
 # Here we are going to install Laravel extension requirements that did not come
 # with the default PHP image. This will be necessary for Laravel and RoadRunner.
 FROM php:8.0-cli-alpine3.13 as php-base
@@ -27,6 +25,8 @@ FROM php-base as octane-base
 # Here we have a build container so that it is not necessary to pull composer into
 # the final container. We are going to create a new Laravel project and install Octane.
 FROM php-base as laravel
+    ARG LARAVEL_VERSION="8.*"
+
     COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
     RUN cd /srv && \
@@ -43,7 +43,8 @@ FROM octane-base
 
     COPY --from=laravel --chown=www-data:www-data /srv/laravel/ /srv/laravel/
 
-    # Allow the user to specify multiple workers through an environment variable.
+    # Allow the user to specify RoadRunner options via ENV variables.
+    ENV ROADRUNNER_MAX_REQUESTS "500"
     ENV ROADRUNNER_WATCH $false
     ENV ROADRUNNER_WORKERS "auto"
 
@@ -52,9 +53,9 @@ FROM octane-base
 
     # Run RoadRunner
     CMD if [[ -z $ROADRUNNER_WATCH ]] ; then \
-        php artisan octane:start --server="roadrunner" --host="0.0.0.0" --workers=${ROADRUNNER_WORKERS} ; \
+        php artisan octane:start --server="roadrunner" --host="0.0.0.0" --workers=${ROADRUNNER_WORKERS} --max-requests=${ROADRUNNER_MAX_REQUESTS} ; \
     else \
-        php artisan octane:start --server="roadrunner" --host="0.0.0.0" --workers=${ROADRUNNER_WORKERS} --watch ; \
+        php artisan octane:start --server="roadrunner" --host="0.0.0.0" --workers=${ROADRUNNER_WORKERS} --max-requests=${ROADRUNNER_MAX_REQUESTS} --watch ; \
     fi
 
     # Check the health status using the Octane status command.
